@@ -126,5 +126,5 @@ def health_check():
     return {"status": "ok", "message": "Backend is running!"}
 
 # Mount static files for local testing
-if os.path.exists("static"):
-    app.mount("/", StaticFiles(directory="static", html=True), name="static")
+if os.path.exists("public"):
+    app.mount("/", StaticFiles(directory="public", html=True), name="static")
