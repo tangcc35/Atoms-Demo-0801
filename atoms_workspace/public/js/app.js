@@ -83,24 +83,19 @@ async function requestDesign(prompt, previousPlan) {
         const msgDiv = addMessageToChat('system', `<strong>Designer Agent:</strong>\n\n<span class="stream-content"></span>`);
         const streamContainer = msgDiv.querySelector('.stream-content');
 
+        let buffer = "";
         while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
-            const chunkText = decoder.decode(value, {stream: true});
-            const lines = chunkText.split('\n').filter(l => l.trim() !== '');
+            if (done) {
+                if (buffer.trim()) processDesignLine(buffer.trim(), streamContainer);
+                break;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
             for (const line of lines) {
-                try {
-                    const parsed = JSON.parse(line);
-                    if (parsed.chunk) {
-                        pendingDesignPlan += parsed.chunk;
-                        if (typeof marked !== 'undefined') {
-                            streamContainer.innerHTML = marked.parse(pendingDesignPlan);
-                        } else {
-                            streamContainer.innerHTML = pendingDesignPlan.replace(/\n/g, '<br>');
-                        }
-                        chatHistory.scrollTop = chatHistory.scrollHeight;
-                    }
-                } catch(e) {}
+                if (line.trim()) processDesignLine(line.trim(), streamContainer);
             }
         }
         addActionButtons();
@@ -110,6 +105,21 @@ async function requestDesign(prompt, previousPlan) {
     } finally {
         setLoading(false);
     }
+}
+
+function processDesignLine(line, streamContainer) {
+    try {
+        const parsed = JSON.parse(line);
+        if (parsed.chunk) {
+            pendingDesignPlan += parsed.chunk;
+            if (typeof marked !== 'undefined') {
+                streamContainer.innerHTML = marked.parse(pendingDesignPlan);
+            } else {
+                streamContainer.innerHTML = pendingDesignPlan.replace(/\n/g, '<br>');
+            }
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+    } catch(e) {}
 }
 
 function addActionButtons() {
@@ -147,29 +157,27 @@ window.approveBuild = async function() {
         const decoder = new TextDecoder("utf-8");
         currentCode = "";
 
+        let buffer = "";
         while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
-            const chunkText = decoder.decode(value, {stream: true});
-            const lines = chunkText.split('\n').filter(l => l.trim() !== '');
+            if (done) {
+                if (buffer.trim()) processBuildLine(buffer.trim());
+                break;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
             for (const line of lines) {
-                try {
-                    const parsed = JSON.parse(line);
-                    if (parsed.status) {
-                        setLoading(true, parsed.status);
-                    }
-                    if (parsed.code_chunk) {
-                        currentCode += parsed.code_chunk;
-                    }
-                } catch(e) {}
+                if (line.trim()) processBuildLine(line.trim());
             }
         }
         
         // Clean markdown backticks if present
         let cleanCode = currentCode.trim();
-        if (cleanCode.startsWith("\`\`\`html")) cleanCode = cleanCode.substring(7);
-        if (cleanCode.startsWith("\`\`\`")) cleanCode = cleanCode.substring(3);
-        if (cleanCode.endsWith("\`\`\`")) cleanCode = cleanCode.substring(0, cleanCode.length - 3);
+        if (cleanCode.startsWith("```html")) cleanCode = cleanCode.substring(7);
+        if (cleanCode.startsWith("```")) cleanCode = cleanCode.substring(3);
+        if (cleanCode.endsWith("```")) cleanCode = cleanCode.substring(0, cleanCode.length - 3);
         
         currentCode = cleanCode.trim();
         updatePreview(currentCode);
@@ -181,6 +189,39 @@ window.approveBuild = async function() {
         addMessageToChat('system', `Error: ${e.message}.`);
     } finally {
         setLoading(false);
+    }
+}
+
+function processBuildLine(line) {
+    try {
+        const parsed = JSON.parse(line);
+        if (parsed.status) {
+            setLoading(true, parsed.status);
+        }
+        if (parsed.reset_code) {
+            currentCode = "";
+        }
+        if (parsed.code_chunk) {
+            currentCode += parsed.code_chunk;
+            updateLiveCodeDisplay(currentCode);
+        }
+    } catch(e) {}
+}
+
+function updateLiveCodeDisplay(code) {
+    let cleanCode = code.trim();
+    if (cleanCode.startsWith("```html")) cleanCode = cleanCode.substring(7);
+    if (cleanCode.startsWith("```")) cleanCode = cleanCode.substring(3);
+    
+    const escapedCode = cleanCode.replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;')
+                                .replace(/"/g, '&quot;')
+                                .replace(/'/g, '&#039;');
+    codeDisplay.innerHTML = escapedCode;
+    const codeView = document.getElementById('code-view');
+    if (codeView) {
+        codeView.scrollTop = codeView.scrollHeight;
     }
 }
 
@@ -303,4 +344,50 @@ function openInNewTab() {
     const newWindow = window.open();
     newWindow.document.write(currentCode || initialContent);
     newWindow.document.close();
+}
+
+// --- Split Window Resizer ---
+const resizer = document.getElementById('resizer');
+const sidebar = document.querySelector('.sidebar');
+
+if (resizer && sidebar) {
+    let isResizing = false;
+
+    const startResize = (e) => {
+        isResizing = true;
+        resizer.classList.add('dragging');
+        document.body.classList.add('is-resizing');
+    };
+
+    const stopResize = () => {
+        if (!isResizing) return;
+        isResizing = false;
+        resizer.classList.remove('dragging');
+        document.body.classList.remove('is-resizing');
+    };
+
+    const resize = (e) => {
+        if (!isResizing) return;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const appContainer = document.getElementById('app-container');
+        const containerWidth = appContainer ? appContainer.getBoundingClientRect().width : window.innerWidth;
+        
+        const minWidth = 250;
+        const maxWidth = containerWidth * 0.6;
+        let newWidth = clientX;
+        
+        if (newWidth < minWidth) newWidth = minWidth;
+        if (newWidth > maxWidth) newWidth = maxWidth;
+
+        sidebar.style.width = `${newWidth}px`;
+    };
+
+    resizer.addEventListener('mousedown', startResize);
+    resizer.addEventListener('touchstart', startResize, { passive: true });
+
+    window.addEventListener('mousemove', resize);
+    window.addEventListener('touchmove', resize, { passive: true });
+
+    window.addEventListener('mouseup', stopResize);
+    window.addEventListener('touchend', stopResize);
 }

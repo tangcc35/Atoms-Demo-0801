@@ -81,8 +81,34 @@ h1, h2, h3 {
     flex-direction: column;
     flex-shrink: 0;
     z-index: 10;
-    resize: horizontal;
-    overflow: hidden;
+}
+
+/* Resizer Gutter */
+.resizer {
+    width: 6px;
+    cursor: col-resize;
+    position: relative;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.05);
+    border-left: 1px solid var(--border-color);
+    transition: background 0.2s ease;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.resizer:hover,
+.resizer.dragging {
+    background: var(--primary-color);
+    box-shadow: 0 0 8px var(--accent-glow);
+}
+
+body.is-resizing {
+    cursor: col-resize !important;
+    user-select: none !important;
+}
+
+body.is-resizing iframe {
+    pointer-events: none !important;
 }
 
 .sidebar-header {

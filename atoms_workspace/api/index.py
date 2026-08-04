@@ -9,6 +9,9 @@ from fastapi.staticfiles import StaticFiles
 
 from google.adk.agents import Agent
 from google.adk.runners import InMemoryRunner
+from google.adk.agents.run_config import RunConfig, StreamingMode
+
+run_config = RunConfig(streaming_mode=StreamingMode.SSE)
 
 app = FastAPI(title="Atoms Agent API")
 
@@ -95,10 +98,11 @@ async def design_step(req: DesignRequest):
         session = await runner_designer.session_service.create_session(app_name=runner_designer.app_name, user_id="u1")
         content = Content(role="user", parts=[Part(text=design_prompt)])
 
-        async for e in runner_designer.run_async(user_id="u1", session_id=session.id, new_message=content):
-            chunk = extract_text(e)
-            if chunk:
-                yield json.dumps({"chunk": chunk}) + "\n"
+        async for e in runner_designer.run_async(user_id="u1", session_id=session.id, new_message=content, run_config=run_config):
+            if e.partial:
+                chunk = extract_text(e)
+                if chunk:
+                    yield json.dumps({"chunk": chunk}) + "\n"
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
@@ -117,22 +121,25 @@ async def build_step(req: BuildRequest):
         draft_code = ""
         yield json.dumps({"status": "Coder agent is writing draft code..."}) + "\n"
 
-        async for e in runner_coder.run_async(user_id="u1", session_id=session_coder.id, new_message=content_coder):
-            chunk = extract_text(e)
-            if chunk:
-                draft_code += chunk
+        async for e in runner_coder.run_async(user_id="u1", session_id=session_coder.id, new_message=content_coder, run_config=run_config):
+            if e.partial:
+                chunk = extract_text(e)
+                if chunk:
+                    draft_code += chunk
+                    yield json.dumps({"code_chunk": chunk, "stage": "coder"}) + "\n"
 
         # Step 3: QA
         qa_prompt = f"Review and fix this code. Output the finalized HTML document.\n\nCode Draft:\n{draft_code}"
         session_qa = await runner_qa.session_service.create_session(app_name=runner_qa.app_name, user_id="u1")
         content_qa = Content(role="user", parts=[Part(text=qa_prompt)])
 
-        yield json.dumps({"status": "QA agent is reviewing and finalizing..."}) + "\n"
+        yield json.dumps({"status": "QA agent is reviewing and finalizing...", "reset_code": True}) + "\n"
 
-        async for e in runner_qa.run_async(user_id="u1", session_id=session_qa.id, new_message=content_qa):
-            chunk = extract_text(e)
-            if chunk:
-                yield json.dumps({"code_chunk": chunk}) + "\n"
+        async for e in runner_qa.run_async(user_id="u1", session_id=session_qa.id, new_message=content_qa, run_config=run_config):
+            if e.partial:
+                chunk = extract_text(e)
+                if chunk:
+                    yield json.dumps({"code_chunk": chunk, "stage": "qa"}) + "\n"
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
