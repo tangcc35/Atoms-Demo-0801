@@ -10,6 +10,9 @@ from fastapi.staticfiles import StaticFiles
 from google.adk.agents import Agent
 from google.adk.runners import InMemoryRunner
 from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.genai.types import ThinkingConfig, ThinkingLevel
+from google.adk.planners import BuiltInPlanner
+
 
 run_config = RunConfig(streaming_mode=StreamingMode.SSE)
 
@@ -36,12 +39,23 @@ class BuildRequest(BaseModel):
 # Configure API Key (ADK automatically picks up GEMINI_API_KEY from environment)
 api_key = os.environ.get("GEMINI_API_KEY", "")
 
+thinking_config = ThinkingConfig(
+    include_thoughts=True,
+    thinking_level=ThinkingLevel.HIGH
+)
+
+# Step 2: Instantiate BuiltInPlanner
+planner = BuiltInPlanner(
+    thinking_config=thinking_config
+)
+
 # 1. Designer Agent
 designer_agent = Agent(
     name="designer",
     model="gemini-3.5-flash-lite",
     instruction="""You are a UX/UI Product Designer. Your job is to read the user's request and output a detailed design plan.
-Include layout structure, color palette, typography, interactive elements, and framework recommendations (e.g., Tailwind). Do not output code, only the design blueprint."""
+Include layout structure, color palette, typography, interactive elements, and framework recommendations (e.g., Tailwind). Do not output code, only the design blueprint.""",
+    planner=planner,
 )
 runner_designer = InMemoryRunner(agent=designer_agent)
 
@@ -54,7 +68,8 @@ Requirements:
 1. Output ONLY a complete HTML document. DO NOT use markdown formatting like ```html. Start immediately with <!DOCTYPE html>.
 2. Must be self-contained: CSS and JS in the same file. Use CDNs (like Tailwind CSS) to save space.
 3. Keep it concise to avoid truncation. Rely on frameworks via CDN instead of custom CSS.
-4. Implement all logic and UI from the design plan."""
+4. Implement all logic and UI from the design plan.""",
+    planner=planner,
 )
 runner_coder = InMemoryRunner(agent=coder_agent)
 
