@@ -55,7 +55,6 @@ designer_agent = Agent(
     model="gemini-3.5-flash-lite",
     instruction="""You are a UX/UI Product Designer. Your job is to read the user's request and output a detailed design plan.
 Include layout structure, color palette, typography, interactive elements, and framework recommendations (e.g., Tailwind). Do not output code, only the design blueprint.""",
-    planner=planner,
 )
 runner_designer = InMemoryRunner(agent=designer_agent)
 
