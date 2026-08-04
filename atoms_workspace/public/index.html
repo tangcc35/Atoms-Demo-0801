@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atoms Agent Workspace</title>
+    <meta name="description" content="AI Agent Workspace for planning, approving, and generating interactive webpages.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css?v=2">
+</head>
+<body>
+    <div id="app-container">
+        <!-- Sidebar Workspace -->
+        <aside class="sidebar glass-panel">
+            <header class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">✨</span>
+                    <h1 class="gradient-text">Atoms Agent</h1>
+                </div>
+                <p class="subtitle">Interactive Web Generator</p>
+            </header>
+            
+            <div class="chat-history" id="chat-history">
+                <div class="message system-msg">
+                    <div class="avatar">🤖</div>
+                    <div class="content">
+                        Hello! I am your AI agent. Describe the web application or component you want to build, and I will generate it for you in the preview panel.
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <form id="prompt-form">
+                    <div class="input-wrapper">
+                        <textarea id="prompt-input" placeholder="Type your request here... (e.g., Build a glassmorphic login form)" rows="3" required></textarea>
+                        <button type="submit" id="generate-btn" class="primary-btn magic-btn">
+                            <span class="btn-text">Generate</span>
+                            <span class="btn-loader hidden">...</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </aside>
+
+        <!-- Preview Area -->
+        <main class="preview-area">
+            <header class="preview-header glass-panel-top">
+                <div class="tabs">
+                    <button class="tab active">Live Preview</button>
+                    <button class="tab" id="code-tab-btn" onclick="toggleCodeView()">Code</button>
+                </div>
+                <div class="actions">
+                    <button class="icon-btn" onclick="refreshPreview()" title="Refresh">🔄</button>
+                    <button class="icon-btn" onclick="openInNewTab()" title="Open in New Tab">↗️</button>
+                </div>
+            </header>
+            
+            <div class="preview-content">
+                <iframe id="preview-frame" title="Live Preview" class="active-view"></iframe>
+                <div id="code-view" class="hidden-view code-container">
+                    <pre><code id="code-display">Your generated code will appear here.</code></pre>
+                </div>
+                
+                <div id="loading-overlay" class="loading-overlay hidden">
+                    <div class="spinner"></div>
+                    <p class="generating-text gradient-text">Generating your application...</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/js/app.js?v=4"></script>
+</body>
+</html>
