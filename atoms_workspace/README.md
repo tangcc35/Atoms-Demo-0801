@@ -9,7 +9,7 @@
 - **Multi-Agent 协同架构 (Google ADK Framework)**：
   采用了 Google 官方 Agent 框架 Google ADK (`google-adk`) 构建三阶段智能体合作流：
   - `Designer Agent`：分析用户意图，规划布局结构、色彩体系、交互细节与 CDN 框架选型（如 Tailwind CSS）。
-  - `Coder Agent`：接收设计方案，实时编写自包含（Self-contained）的单文件 HTML 网页。
+  - `Coder Agent`：接收设计方案，实时编写自包含（Self-contained）的单文件 HTML 网页（配置 `ThinkingLevel.HIGH` 的 `ThinkingConfig` 与 `BuiltInPlanner` 增强代码逻辑推演）。
   - `QA Agent`：对代码草稿进行语法审查、闭合标签校验及 CDN 可用性检测，输出最终精修后的生产级代码。
 - **流式响应与打字机打磨 (Google ADK SSE Streaming)**：
   为了解决大模型输出完整代码时长时间无响应的尴尬等待，配置了 ADK `StreamingMode.SSE` 模式与 FastAPI 的 `StreamingResponse` (NDJSON 格式)。结合前端 ReadableStream，实现了设计方案 Markdown 与代码字符级的实时流式打字机渲染。
@@ -22,7 +22,7 @@
 
 ## 3. 当前完成程度 (Current Completion Status)
 **已完成的核心闭环：**
-- [x] **Multi-Agent 协作链**：Designer Agent -> Coder Agent -> QA Agent 完整自动化与迭代微调机制。
+- [x] **Multi-Agent 协作链**：Designer Agent -> Coder Agent -> QA Agent 完整自动化与迭代微调机制（Coder Agent 配置 `ThinkingLevel` 深度思考增强）。
 - [x] **实时 SSE 流式输出 (Streaming)**：基于 ADK SSE 的字符级 real-time 输出，告别大模型等待卡顿。
 - [x] **人机协同确认 (Human-in-the-loop)**：用户可先审阅 Designer 设计蓝图，确认后再选择 `Approve & Build` 或继续打磨设计。
 - [x] **交互式分栏与双视角**：支持自定义拖拽调节侧边栏宽度的 Split View，以及 Live Preview / Code View 切换。
