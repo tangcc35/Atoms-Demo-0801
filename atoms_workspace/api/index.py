@@ -39,7 +39,7 @@ api_key = os.environ.get("GEMINI_API_KEY", "")
 # 1. Designer Agent
 designer_agent = Agent(
     name="designer",
-    model="gemini-3.6-flash",
+    model="gemini-3.5-flash-lite",
     instruction="""You are a UX/UI Product Designer. Your job is to read the user's request and output a detailed design plan.
 Include layout structure, color palette, typography, interactive elements, and framework recommendations (e.g., Tailwind). Do not output code, only the design blueprint."""
 )
@@ -48,7 +48,7 @@ runner_designer = InMemoryRunner(agent=designer_agent)
 # 2. Coder Agent
 coder_agent = Agent(
     name="coder",
-    model="gemini-3.6-flash",
+    model="gemini-3.5-flash-lite",
     instruction="""You are an Expert Web Developer. You receive a design plan and must generate a complete, runnable, single-file HTML application.
 Requirements:
 1. Output ONLY a complete HTML document. DO NOT use markdown formatting like ```html. Start immediately with <!DOCTYPE html>.
@@ -61,7 +61,7 @@ runner_coder = InMemoryRunner(agent=coder_agent)
 # 3. QA Agent
 qa_agent = Agent(
     name="qa",
-    model="gemini-3.6-flash",
+    model="gemini-3.5-flash-lite",
     instruction="""You are a QA Engineer and Code Reviewer. Review the provided HTML code for completeness, correct closing tags, working CDNs, and UI bugs.
 Fix any issues and output ONLY the final, polished HTML document. Do not include markdown explanations outside the code block. It must start with <!DOCTYPE html>."""
 )
