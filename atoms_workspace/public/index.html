@@ -8,18 +8,52 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=2">
+    <link rel="stylesheet" href="/css/style.css?v=5">
 </head>
 <body>
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="auth-overlay hidden">
+        <div class="auth-card">
+            <div class="logo" style="justify-content: center;">
+                <span class="logo-icon">✨</span>
+                <h1 class="gradient-text">Atoms Agent</h1>
+            </div>
+            <p class="subtitle">Interactive Web Generator</p>
+            
+            <div class="auth-tabs">
+                <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Login</button>
+                <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">Register</button>
+            </div>
+            <form id="auth-form" onsubmit="handleAuth(event)">
+                <div class="input-group">
+                    <label>Username</label>
+                    <input type="text" id="auth-username" required placeholder="Enter username">
+                </div>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" id="auth-password" required placeholder="Enter password">
+                </div>
+                <p id="auth-error" class="error-text hidden"></p>
+                <button type="submit" id="auth-submit-btn" class="primary-btn magic-btn" style="width: 100%; justify-content: center; margin-top: 1rem;">Login</button>
+            </form>
+        </div>
+    </div>
+
     <div id="app-container">
         <!-- Sidebar Workspace -->
         <aside class="sidebar glass-panel">
-            <header class="sidebar-header">
-                <div class="logo">
-                    <span class="logo-icon">✨</span>
-                    <h1 class="gradient-text">Atoms Agent</h1>
+            <header class="sidebar-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div>
+                    <div class="logo">
+                        <span class="logo-icon">✨</span>
+                        <h1 class="gradient-text">Atoms Agent</h1>
+                    </div>
+                    <p class="subtitle">Interactive Web Generator</p>
                 </div>
-                <p class="subtitle">Interactive Web Generator</p>
+                <div>
+                    <button class="icon-btn" onclick="logout()" title="Logout" style="font-size: 1.2rem; padding: 4px; margin-right: 8px;">🚪</button>
+                    <button class="icon-btn" onclick="clearWorkspace()" title="Clear Workspace" style="font-size: 1.2rem; padding: 4px;">🗑️</button>
+                </div>
             </header>
             
             <div class="chat-history" id="chat-history">
@@ -62,8 +96,18 @@
             
             <div class="preview-content">
                 <iframe id="preview-frame" title="Live Preview" class="active-view"></iframe>
-                <div id="code-view" class="hidden-view code-container">
-                    <pre><code id="code-display">Your generated code will appear here.</code></pre>
+                <div id="code-view" class="hidden-view code-container" style="display: flex; flex-direction: column; height: 100%;">
+                    <div class="code-actions" style="display: flex; gap: 8px; padding: 8px; background: rgba(255, 255, 255, 0.1); border-bottom: 1px solid rgba(255,255,255,0.1); align-items: center;">
+                        <select id="version-select" onchange="handleVersionChange()" class="glass-input" style="flex: 1;"></select>
+                        <span id="diff-separator" style="display: none; color: #a1a1aa; font-size: 0.9rem;">vs</span>
+                        <select id="diff-base-select" onchange="renderDiff()" class="glass-input" style="display: none; flex: 1;"></select>
+                        
+                        <button class="icon-btn" onclick="toggleEditCode()" title="Edit Code" id="edit-code-btn">✏️</button>
+                        <button class="icon-btn" onclick="saveEditedCode()" title="Save Changes" style="display:none;" id="save-code-btn">💾</button>
+                        <button class="icon-btn" onclick="exportCode()" title="Export HTML" id="export-code-btn">📥</button>
+                        <button class="icon-btn" onclick="toggleDiffMode()" title="Toggle Diff Mode" id="diff-toggle-btn">🔄 Diff</button>
+                    </div>
+                    <pre style="flex: 1; overflow: auto; margin: 0;"><code id="code-display">Your generated code will appear here.</code></pre>
                 </div>
                 
                 <div id="loading-overlay" class="loading-overlay hidden">
@@ -75,6 +119,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="/js/app.js?v=4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/diff@5.2.0/dist/diff.min.js"></script>
+    <script src="/js/app.js?v=6"></script>
 </body>
 </html>

@@ -13,7 +13,6 @@ from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.genai.types import ThinkingConfig, ThinkingLevel
 from google.adk.planners import BuiltInPlanner
 
-
 run_config = RunConfig(streaming_mode=StreamingMode.SSE)
 
 app = FastAPI(title="Atoms Agent API")
@@ -30,10 +29,12 @@ app.add_middleware(
 class DesignRequest(BaseModel):
     prompt: str
     current_plan: str = ""
+    current_code: str = ""
 
 
 class BuildRequest(BaseModel):
     design_plan: str
+    current_code: str = ""
 
 
 # Configure API Key (ADK automatically picks up GEMINI_API_KEY from environment)
@@ -54,7 +55,8 @@ designer_agent = Agent(
     name="designer",
     model="gemini-3.5-flash-lite",
     instruction="""You are a UX/UI Product Designer. Your job is to read the user's request and output a detailed design plan.
-Include layout structure, color palette, typography, interactive elements, and framework recommendations (e.g., Tailwind). Do not output code, only the design blueprint.""",
+Include layout structure, color palette, typography, and interactive elements. 
+CRITICAL: DO NOT recommend or use Tailwind CDN (cdn.tailwindcss.com) as it causes MutationObserver errors. Recommend Vanilla CSS or other stable alternatives. Do not output code, only the design blueprint.""",
 )
 runner_designer = InMemoryRunner(agent=designer_agent)
 
@@ -65,9 +67,10 @@ coder_agent = Agent(
     instruction="""You are an Expert Web Developer. You receive a design plan and must generate a complete, runnable, single-file HTML application.
 Requirements:
 1. Output ONLY a complete HTML document. DO NOT use markdown formatting like ```html. Start immediately with <!DOCTYPE html>.
-2. Must be self-contained: CSS and JS in the same file. Use CDNs (like Tailwind CSS) to save space.
-3. Keep it concise to avoid truncation. Rely on frameworks via CDN instead of custom CSS.
-4. Implement all logic and UI from the design plan.""",
+2. Must be self-contained: CSS and JS in the same file.
+3. CRITICAL: DO NOT use Tailwind CDN (cdn.tailwindcss.com) as it is not for production and causes errors. Use Vanilla CSS.
+4. Implement all logic and UI from the design plan.
+5. If modifying existing code, ensure you preserve existing features (like limits, buttons) unless explicitly asked to remove them.""",
     planner=planner,
 )
 runner_coder = InMemoryRunner(agent=coder_agent)
@@ -101,22 +104,28 @@ def extract_text(e) -> str:
 @app.post("/api/design")
 async def design_step(req: DesignRequest):
     if not api_key:
-        return {"design_plan": "Mock Design Plan because GEMINI_API_KEY is not set."}
+        raise HTTPException(
+            status_code=500, detail="GEMINI_API_KEY is not set in the environment.")
 
     async def event_generator():
         if req.current_plan:
-            design_prompt = f"Previous Design Plan:\n{req.current_plan}\n\nUser Modification Request:\n{req.prompt}\n\nPlease update the design plan accordingly."
+            design_prompt = f"Previous Design Plan:\n{req.current_plan}\n\nCurrent Code (Do not output code, just plan how to modify it):\n{req.current_code}\n\nUser Modification Request:\n{req.prompt}\n\nPlease update the design plan accordingly. Explicitly state what features from the previous code must be preserved."
         else:
             design_prompt = f"Create a detailed design plan for this user request: {req.prompt}"
 
         session = await runner_designer.session_service.create_session(app_name=runner_designer.app_name, user_id="u1")
         content = Content(role="user", parts=[Part(text=design_prompt)])
 
-        async for e in runner_designer.run_async(user_id="u1", session_id=session.id, new_message=content, run_config=run_config):
-            if e.partial:
-                chunk = extract_text(e)
-                if chunk:
-                    yield json.dumps({"chunk": chunk}) + "\n"
+        try:
+            async for e in runner_designer.run_async(user_id="u1", session_id=session.id, new_message=content, run_config=run_config):
+                if e.partial:
+                    chunk = extract_text(e)
+                    if chunk:
+                        yield json.dumps({"chunk": chunk}) + "\n"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield json.dumps({"error": f"LLM/ADK Error: {str(e)}"}) + "\n"
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
@@ -124,23 +133,33 @@ async def design_step(req: DesignRequest):
 @app.post("/api/build")
 async def build_step(req: BuildRequest):
     if not api_key:
-        return {"code": "<h1>Mock Code</h1>"}
+        raise HTTPException(
+            status_code=500, detail="GEMINI_API_KEY is not set in the environment.")
 
     async def event_generator():
         # Step 2: Code
-        code_prompt = f"Design Plan:\n{req.design_plan}\n\nGenerate the complete HTML file based on the plan."
+        if req.current_code:
+            code_prompt = f"Previous Code:\n{req.current_code}\n\nDesign Plan:\n{req.design_plan}\n\nGenerate the updated, complete HTML file based on the plan. Retain previous features."
+        else:
+            code_prompt = f"Design Plan:\n{req.design_plan}\n\nGenerate the complete HTML file based on the plan."
         session_coder = await runner_coder.session_service.create_session(app_name=runner_coder.app_name, user_id="u1")
         content_coder = Content(role="user", parts=[Part(text=code_prompt)])
 
         draft_code = ""
         yield json.dumps({"status": "Coder agent is writing draft code..."}) + "\n"
 
-        async for e in runner_coder.run_async(user_id="u1", session_id=session_coder.id, new_message=content_coder, run_config=run_config):
-            if e.partial:
-                chunk = extract_text(e)
-                if chunk:
-                    draft_code += chunk
-                    yield json.dumps({"code_chunk": chunk, "stage": "coder"}) + "\n"
+        try:
+            async for e in runner_coder.run_async(user_id="u1", session_id=session_coder.id, new_message=content_coder, run_config=run_config):
+                if e.partial:
+                    chunk = extract_text(e)
+                    if chunk:
+                        draft_code += chunk
+                        yield json.dumps({"code_chunk": chunk, "stage": "coder"}) + "\n"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield json.dumps({"error": f"Coder Agent Error: {str(e)}"}) + "\n"
+            return
 
         # Step 3: QA
         qa_prompt = f"Review and fix this code. Output the finalized HTML document.\n\nCode Draft:\n{draft_code}"
@@ -149,11 +168,16 @@ async def build_step(req: BuildRequest):
 
         yield json.dumps({"status": "QA agent is reviewing and finalizing...", "reset_code": True}) + "\n"
 
-        async for e in runner_qa.run_async(user_id="u1", session_id=session_qa.id, new_message=content_qa, run_config=run_config):
-            if e.partial:
-                chunk = extract_text(e)
-                if chunk:
-                    yield json.dumps({"code_chunk": chunk, "stage": "qa"}) + "\n"
+        try:
+            async for e in runner_qa.run_async(user_id="u1", session_id=session_qa.id, new_message=content_qa, run_config=run_config):
+                if e.partial:
+                    chunk = extract_text(e)
+                    if chunk:
+                        yield json.dumps({"code_chunk": chunk, "stage": "qa"}) + "\n"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield json.dumps({"error": f"QA Agent Error: {str(e)}"}) + "\n"
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 

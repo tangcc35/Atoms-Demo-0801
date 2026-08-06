@@ -10,8 +10,13 @@ const btnLoader = document.querySelector('.btn-loader');
 const tabs = document.querySelectorAll('.tab');
 
 let currentCode = "";
+let codeVersions = [];
 let isCodeView = false;
 let pendingDesignPlan = "";
+let currentUser = localStorage.getItem('currentUser');
+
+// We will load user data dynamically based on login state
+
 
 // Initialize preview with some default content
 const initialContent = `
@@ -35,7 +40,7 @@ const initialContent = `
 </body>
 </html>
 `;
-updatePreview(initialContent);
+// initial preview set handled in loadUserData
 
 promptInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -69,11 +74,12 @@ async function requestDesign(prompt, previousPlan) {
         const response = await fetch('/api/design', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: prompt, current_plan: previousPlan })
+            body: JSON.stringify({ prompt: prompt, current_plan: previousPlan, current_code: currentCode })
         });
         
         if (!response.ok) {
-            throw new Error('Failed to generate design plan');
+            const errText = await response.text();
+            throw new Error(`Failed to generate design plan: ${response.status} ${errText}`);
         }
 
         const reader = response.body.getReader();
@@ -110,6 +116,11 @@ async function requestDesign(prompt, previousPlan) {
 function processDesignLine(line, streamContainer) {
     try {
         const parsed = JSON.parse(line);
+        if (parsed.error) {
+            addMessageToChat('system', `❌ <strong>Error:</strong> ${parsed.error}`);
+            setLoading(false);
+            return;
+        }
         if (parsed.chunk) {
             pendingDesignPlan += parsed.chunk;
             if (typeof marked !== 'undefined') {
@@ -146,11 +157,12 @@ window.approveBuild = async function() {
         const response = await fetch('/api/build', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ design_plan: pendingDesignPlan })
+            body: JSON.stringify({ design_plan: pendingDesignPlan, current_code: currentCode })
         });
         
         if (!response.ok) {
-            throw new Error('Failed to build code');
+            const errText = await response.text();
+            throw new Error(`Failed to build code: ${response.status} ${errText}`);
         }
 
         const reader = response.body.getReader();
@@ -183,6 +195,14 @@ window.approveBuild = async function() {
         updatePreview(currentCode);
         pendingDesignPlan = ""; // Reset for next project
         
+        // Save version
+        codeVersions.push({ time: new Date().toLocaleTimeString(), code: currentCode });
+        if (currentUser) {
+            localStorage.setItem(`codeVersions_${currentUser}`, JSON.stringify(codeVersions));
+            localStorage.setItem(`currentCode_${currentUser}`, currentCode);
+        }
+        updateVersionSelect();
+        
         addMessageToChat('system', 'Build and QA complete! Check out the live preview.');
     } catch (e) {
         console.error('Build error:', e);
@@ -195,6 +215,11 @@ window.approveBuild = async function() {
 function processBuildLine(line) {
     try {
         const parsed = JSON.parse(line);
+        if (parsed.error) {
+            addMessageToChat('system', `❌ <strong>Error:</strong> ${parsed.error}`);
+            setLoading(false);
+            return;
+        }
         if (parsed.status) {
             setLoading(true, parsed.status);
         }
@@ -260,6 +285,7 @@ function addMessageToChat(role, content) {
     
     chatHistory.appendChild(msgDiv);
     chatHistory.scrollTop = chatHistory.scrollHeight;
+    if (currentUser) localStorage.setItem(`chatHistory_${currentUser}`, chatHistory.innerHTML);
     
     return msgDiv; // Return the DOM element so we can update stream content
 }
@@ -391,3 +417,299 @@ if (resizer && sidebar) {
     window.addEventListener('mouseup', stopResize);
     window.addEventListener('touchend', stopResize);
 }
+
+// --- Added Features ---
+
+let isDiffMode = false;
+
+function updateVersionSelect() {
+    const select = document.getElementById('version-select');
+    const diffSelect = document.getElementById('diff-base-select');
+    if (!select) return;
+    
+    select.innerHTML = '';
+    if (diffSelect) diffSelect.innerHTML = '';
+    codeVersions.forEach((v, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = `Version ${i + 1} (${v.time})`;
+        select.appendChild(opt);
+        
+        if (diffSelect) {
+            const opt2 = document.createElement('option');
+            opt2.value = i;
+            opt2.textContent = `Version ${i + 1}`;
+            diffSelect.appendChild(opt2);
+        }
+    });
+    if (codeVersions.length > 0) {
+        select.value = codeVersions.length - 1;
+        if (diffSelect) {
+            diffSelect.value = Math.max(0, codeVersions.length - 2);
+        }
+    }
+}
+
+window.handleVersionChange = function() {
+    if (isDiffMode) {
+        renderDiff();
+    } else {
+        const select = document.getElementById('version-select');
+        window.loadVersion(select.value);
+    }
+}
+
+window.loadVersion = function(index) {
+    if (codeVersions[index]) {
+        currentCode = codeVersions[index].code;
+        if (currentUser) localStorage.setItem(`currentCode_${currentUser}`, currentCode);
+        updatePreview(currentCode);
+    }
+}
+
+window.toggleEditCode = function() {
+    const isEditable = codeDisplay.isContentEditable;
+    codeDisplay.contentEditable = !isEditable;
+    const saveBtn = document.getElementById('save-code-btn');
+    if (!isEditable) {
+        codeDisplay.style.backgroundColor = 'rgba(255,255,255,0.1)';
+        codeDisplay.focus();
+        if(saveBtn) saveBtn.style.display = 'inline-block';
+    } else {
+        codeDisplay.style.backgroundColor = 'transparent';
+        if(saveBtn) saveBtn.style.display = 'none';
+    }
+}
+
+window.saveEditedCode = function() {
+    let newCode = codeDisplay.innerText;
+    currentCode = newCode;
+    codeVersions.push({ time: new Date().toLocaleTimeString() + ' (Manual)', code: currentCode });
+    if (currentUser) {
+        localStorage.setItem(`codeVersions_${currentUser}`, JSON.stringify(codeVersions));
+        localStorage.setItem(`currentCode_${currentUser}`, currentCode);
+    }
+    updateVersionSelect();
+    updatePreview(currentCode);
+    window.toggleEditCode();
+    addMessageToChat('system', 'Code manually edited and saved.');
+}
+
+window.exportCode = function() {
+    const blob = new Blob([currentCode || initialContent], {type: 'text/html'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'atoms_export.html';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+window.toggleDiffMode = function() {
+    isDiffMode = !isDiffMode;
+    const diffSelect = document.getElementById('diff-base-select');
+    const diffSeparator = document.getElementById('diff-separator');
+    const editBtn = document.getElementById('edit-code-btn');
+    const diffBtn = document.getElementById('diff-toggle-btn');
+    
+    if (isDiffMode) {
+        if (codeVersions.length < 2) {
+            alert("Need at least 2 versions to compare.");
+            isDiffMode = false;
+            return;
+        }
+        diffSelect.style.display = 'block';
+        diffSeparator.style.display = 'block';
+        if(editBtn) editBtn.style.display = 'none';
+        if(diffBtn) diffBtn.style.backgroundColor = 'rgba(255,255,255,0.2)';
+        
+        // Ensure diffSelect is set relative to target
+        const targetIdx = parseInt(document.getElementById('version-select').value) || (codeVersions.length - 1);
+        diffSelect.value = Math.max(0, targetIdx - 1);
+        
+        window.renderDiff();
+    } else {
+        diffSelect.style.display = 'none';
+        diffSeparator.style.display = 'none';
+        if(editBtn) editBtn.style.display = 'inline-block';
+        if(diffBtn) diffBtn.style.backgroundColor = 'transparent';
+        
+        // Restore normal code view
+        const select = document.getElementById('version-select');
+        window.loadVersion(select.value);
+    }
+}
+
+window.renderDiff = function() {
+    if (typeof Diff === 'undefined') {
+        alert("Diff library not loaded.");
+        return;
+    }
+    
+    const targetIdx = parseInt(document.getElementById('version-select').value);
+    const baseIdx = parseInt(document.getElementById('diff-base-select').value);
+    
+    if (isNaN(targetIdx) || isNaN(baseIdx)) return;
+    
+    const curr = codeVersions[targetIdx].code;
+    const prev = codeVersions[baseIdx].code;
+    
+    const diff = Diff.diffLines(prev, curr);
+    const fragment = document.createDocumentFragment();
+    diff.forEach((part) => {
+        const span = document.createElement('span');
+        // Use specific colors for diff
+        span.style.color = part.added ? '#10b981' : part.removed ? '#ef4444' : 'inherit';
+        span.style.backgroundColor = part.added ? 'rgba(16, 185, 129, 0.1)' : part.removed ? 'rgba(239, 68, 68, 0.1)' : 'transparent';
+        span.style.display = part.added || part.removed ? 'inline-block' : 'inline';
+        span.style.width = part.added || part.removed ? '100%' : 'auto';
+        // Escape HTML characters before creating text node
+        span.textContent = part.value;
+        fragment.appendChild(span);
+    });
+    
+    codeDisplay.innerHTML = '';
+    codeDisplay.appendChild(fragment);
+    
+    if (!isCodeView) toggleCodeView();
+}
+
+window.clearWorkspace = function() {
+    if (confirm("Are you sure you want to clear your workspace? This cannot be undone.")) {
+        if (currentUser) {
+            localStorage.removeItem(`currentCode_${currentUser}`);
+            localStorage.removeItem(`codeVersions_${currentUser}`);
+            localStorage.removeItem(`chatHistory_${currentUser}`);
+        }
+        
+        codeVersions = [];
+        currentCode = "";
+        pendingDesignPlan = "";
+        
+        // Reset Chat
+        chatHistory.innerHTML = `
+            <div class="message system-msg">
+                <div class="avatar">🤖</div>
+                <div class="content">
+                    Hello! I am your AI agent. Describe the web application or component you want to build, and I will generate it for you in the preview panel.
+                </div>
+            </div>
+        `;
+        if (currentUser) localStorage.setItem(`chatHistory_${currentUser}`, chatHistory.innerHTML);
+        
+        updatePreview(initialContent);
+        updateVersionSelect();
+    }
+}
+
+// --- Auth Features ---
+let authMode = 'login';
+const authScreen = document.getElementById('auth-screen');
+const appContainer = document.getElementById('app-container');
+
+function loadUserData(username) {
+    if (!username) return;
+    currentCode = localStorage.getItem(`currentCode_${username}`) || "";
+    codeVersions = JSON.parse(localStorage.getItem(`codeVersions_${username}`)) || [];
+    pendingDesignPlan = "";
+    
+    const savedChat = localStorage.getItem(`chatHistory_${username}`);
+    if (savedChat) {
+        chatHistory.innerHTML = savedChat;
+    } else {
+        chatHistory.innerHTML = `
+            <div class="message system-msg">
+                <div class="avatar">🤖</div>
+                <div class="content">
+                    Hello! I am your AI agent. Describe the web application or component you want to build, and I will generate it for you in the preview panel.
+                </div>
+            </div>
+        `;
+    }
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    
+    if (currentCode) {
+        updatePreview(currentCode);
+        updateVersionSelect();
+    } else {
+        updatePreview(initialContent);
+        updateVersionSelect();
+    }
+}
+
+function checkAuth() {
+    if (currentUser) {
+        loadUserData(currentUser);
+        if(authScreen) authScreen.classList.add('hidden');
+        if(appContainer) appContainer.style.display = 'flex';
+    } else {
+        if(authScreen) authScreen.classList.remove('hidden');
+        if(appContainer) appContainer.style.display = 'none';
+    }
+}
+
+window.switchAuthTab = function(mode) {
+    authMode = mode;
+    document.getElementById('tab-login').classList.toggle('active', mode === 'login');
+    document.getElementById('tab-register').classList.toggle('active', mode === 'register');
+    document.getElementById('auth-submit-btn').textContent = mode === 'login' ? 'Login' : 'Register';
+    document.getElementById('auth-error').classList.add('hidden');
+}
+
+window.handleAuth = function(e) {
+    e.preventDefault();
+    const username = document.getElementById('auth-username').value.trim();
+    const password = document.getElementById('auth-password').value.trim();
+    const errorEl = document.getElementById('auth-error');
+    
+    if (!username || !password) {
+        errorEl.textContent = 'Please fill out all fields.';
+        errorEl.classList.remove('hidden');
+        return;
+    }
+    
+    let users = JSON.parse(localStorage.getItem('users')) || {};
+    
+    if (authMode === 'register') {
+        if (users[username]) {
+            errorEl.textContent = 'Username already exists.';
+            errorEl.classList.remove('hidden');
+            return;
+        }
+        users[username] = password;
+        localStorage.setItem('users', JSON.stringify(users));
+        currentUser = username;
+        localStorage.setItem('currentUser', username);
+        document.getElementById('auth-form').reset();
+        checkAuth();
+    } else {
+        if (users[username] && users[username] === password) {
+            currentUser = username;
+            localStorage.setItem('currentUser', username);
+            document.getElementById('auth-form').reset();
+            checkAuth();
+        } else {
+            errorEl.textContent = 'Invalid username or password.';
+            errorEl.classList.remove('hidden');
+        }
+    }
+}
+
+window.logout = function() {
+    currentUser = null;
+    localStorage.removeItem('currentUser');
+    
+    // Reset global state
+    currentCode = "";
+    codeVersions = [];
+    pendingDesignPlan = "";
+    chatHistory.innerHTML = "";
+    
+    checkAuth();
+}
+
+// Initialize on load
+document.addEventListener('DOMContentLoaded', () => {
+    checkAuth();
+});
+checkAuth(); // Also call immediately in case DOMContentLoaded already fired
