@@ -2,7 +2,8 @@ const promptForm = document.getElementById('prompt-form');
 const promptInput = document.getElementById('prompt-input');
 const chatHistory = document.getElementById('chat-history');
 const previewFrame = document.getElementById('preview-frame');
-const codeDisplay = document.getElementById('code-display');
+let monacoEditor = null;
+let monacoDiffEditor = null;
 const loadingOverlay = document.getElementById('loading-overlay');
 const generateBtn = document.getElementById('generate-btn');
 const btnText = document.querySelector('.btn-text');
@@ -237,16 +238,10 @@ function updateLiveCodeDisplay(code) {
     let cleanCode = code.trim();
     if (cleanCode.startsWith("```html")) cleanCode = cleanCode.substring(7);
     if (cleanCode.startsWith("```")) cleanCode = cleanCode.substring(3);
+    if (cleanCode.endsWith("```")) cleanCode = cleanCode.substring(0, cleanCode.length - 3);
     
-    const escapedCode = cleanCode.replace(/&/g, '&amp;')
-                                .replace(/</g, '&lt;')
-                                .replace(/>/g, '&gt;')
-                                .replace(/"/g, '&quot;')
-                                .replace(/'/g, '&#039;');
-    codeDisplay.innerHTML = escapedCode;
-    const codeView = document.getElementById('code-view');
-    if (codeView) {
-        codeView.scrollTop = codeView.scrollHeight;
+    if (monacoEditor) {
+        monacoEditor.setValue(cleanCode);
     }
 }
 
@@ -295,13 +290,9 @@ function updatePreview(code) {
     previewFrame.srcdoc = code;
     
     // Update Code View
-    // Escape HTML for display
-    const escapedCode = code.replace(/&/g, '&amp;')
-                            .replace(/</g, '&lt;')
-                            .replace(/>/g, '&gt;')
-                            .replace(/"/g, '&quot;')
-                            .replace(/'/g, '&#039;');
-    codeDisplay.innerHTML = escapedCode;
+    if (monacoEditor) {
+        monacoEditor.setValue(code);
+    }
 }
 
 function setLoading(isLoading, text = "Generating your application...") {
@@ -468,21 +459,21 @@ window.loadVersion = function(index) {
 }
 
 window.toggleEditCode = function() {
-    const isEditable = codeDisplay.isContentEditable;
-    codeDisplay.contentEditable = !isEditable;
+    if (!monacoEditor) return;
+    const isReadOnly = monacoEditor.getOptions().get(monaco.editor.EditorOption.readOnly);
+    monacoEditor.updateOptions({ readOnly: !isReadOnly });
+    
     const saveBtn = document.getElementById('save-code-btn');
-    if (!isEditable) {
-        codeDisplay.style.backgroundColor = 'rgba(255,255,255,0.1)';
-        codeDisplay.focus();
+    if (isReadOnly) { // Switching to edit mode
         if(saveBtn) saveBtn.style.display = 'inline-block';
     } else {
-        codeDisplay.style.backgroundColor = 'transparent';
         if(saveBtn) saveBtn.style.display = 'none';
     }
 }
 
 window.saveEditedCode = function() {
-    let newCode = codeDisplay.innerText;
+    if (!monacoEditor) return;
+    let newCode = monacoEditor.getValue();
     currentCode = newCode;
     codeVersions.push({ time: new Date().toLocaleTimeString() + ' (Manual)', code: currentCode });
     if (currentUser) {
@@ -512,6 +503,9 @@ window.toggleDiffMode = function() {
     const editBtn = document.getElementById('edit-code-btn');
     const diffBtn = document.getElementById('diff-toggle-btn');
     
+    const editorContainer = document.getElementById('monaco-editor-container');
+    const diffContainer = document.getElementById('monaco-diff-container');
+    
     if (isDiffMode) {
         if (codeVersions.length < 2) {
             alert("Need at least 2 versions to compare.");
@@ -523,7 +517,9 @@ window.toggleDiffMode = function() {
         if(editBtn) editBtn.style.display = 'none';
         if(diffBtn) diffBtn.style.backgroundColor = 'rgba(255,255,255,0.2)';
         
-        // Ensure diffSelect is set relative to target
+        editorContainer.style.display = 'none';
+        diffContainer.style.display = 'block';
+        
         const targetIdx = parseInt(document.getElementById('version-select').value) || (codeVersions.length - 1);
         diffSelect.value = Math.max(0, targetIdx - 1);
         
@@ -534,6 +530,9 @@ window.toggleDiffMode = function() {
         if(editBtn) editBtn.style.display = 'inline-block';
         if(diffBtn) diffBtn.style.backgroundColor = 'transparent';
         
+        editorContainer.style.display = 'block';
+        diffContainer.style.display = 'none';
+        
         // Restore normal code view
         const select = document.getElementById('version-select');
         window.loadVersion(select.value);
@@ -541,8 +540,8 @@ window.toggleDiffMode = function() {
 }
 
 window.renderDiff = function() {
-    if (typeof Diff === 'undefined') {
-        alert("Diff library not loaded.");
+    if (!monacoDiffEditor) {
+        alert("Diff editor not initialized.");
         return;
     }
     
@@ -554,22 +553,13 @@ window.renderDiff = function() {
     const curr = codeVersions[targetIdx].code;
     const prev = codeVersions[baseIdx].code;
     
-    const diff = Diff.diffLines(prev, curr);
-    const fragment = document.createDocumentFragment();
-    diff.forEach((part) => {
-        const span = document.createElement('span');
-        // Use specific colors for diff
-        span.style.color = part.added ? '#10b981' : part.removed ? '#ef4444' : 'inherit';
-        span.style.backgroundColor = part.added ? 'rgba(16, 185, 129, 0.1)' : part.removed ? 'rgba(239, 68, 68, 0.1)' : 'transparent';
-        span.style.display = part.added || part.removed ? 'inline-block' : 'inline';
-        span.style.width = part.added || part.removed ? '100%' : 'auto';
-        // Escape HTML characters before creating text node
-        span.textContent = part.value;
-        fragment.appendChild(span);
-    });
+    const originalModel = monaco.editor.createModel(prev, "html");
+    const modifiedModel = monaco.editor.createModel(curr, "html");
     
-    codeDisplay.innerHTML = '';
-    codeDisplay.appendChild(fragment);
+    monacoDiffEditor.setModel({
+        original: originalModel,
+        modified: modifiedModel
+    });
     
     if (!isCodeView) toggleCodeView();
 }
@@ -711,5 +701,27 @@ window.logout = function() {
 // Initialize on load
 document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
+    
+    // Initialize Monaco Editor
+    if (window.require) {
+        require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.46.0/min/vs' }});
+        require(['vs/editor/editor.main'], function() {
+            monacoEditor = monaco.editor.create(document.getElementById('monaco-editor-container'), {
+                value: currentCode || initialContent,
+                language: 'html',
+                theme: 'vs-dark',
+                automaticLayout: true,
+                readOnly: true,
+                minimap: { enabled: false }
+            });
+
+            monacoDiffEditor = monaco.editor.createDiffEditor(document.getElementById('monaco-diff-container'), {
+                theme: 'vs-dark',
+                automaticLayout: true,
+                readOnly: true,
+                minimap: { enabled: false }
+            });
+        });
+    }
 });
 checkAuth(); // Also call immediately in case DOMContentLoaded already fired

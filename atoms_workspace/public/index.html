@@ -107,7 +107,8 @@
                         <button class="icon-btn" onclick="exportCode()" title="Export HTML" id="export-code-btn">📥</button>
                         <button class="icon-btn" onclick="toggleDiffMode()" title="Toggle Diff Mode" id="diff-toggle-btn">🔄 Diff</button>
                     </div>
-                    <pre style="flex: 1; overflow: auto; margin: 0;"><code id="code-display">Your generated code will appear here.</code></pre>
+                    <div id="monaco-editor-container" style="flex: 1; min-height: 0; position: relative;"></div>
+                    <div id="monaco-diff-container" style="flex: 1; min-height: 0; position: relative; display: none;"></div>
                 </div>
                 
                 <div id="loading-overlay" class="loading-overlay hidden">
@@ -119,7 +120,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/diff@5.2.0/dist/diff.min.js"></script>
+    <!-- Monaco Editor AMD Loader -->
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.46.0/min/vs/loader.js"></script>
     <script src="/js/app.js?v=6"></script>
 </body>
 </html>
